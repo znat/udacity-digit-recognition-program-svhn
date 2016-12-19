@@ -16,9 +16,11 @@ To make the model development easier I will start from a synthetic dataset gener
 The final model will be trained with a considerable amount of (augmented) data on [Google Cloud ML](cloud.google.com/ml‎), Google's Tensorflow as a service platform. Distributed training requires a proper implementation of the data pipeline and to coordinate training units each running in concurrent threads. That is where the main focus will be.
 
 ### Metrics
-A street number is a sequence of digits. I will use one classifier for the length (# of digits) and one classifier for the value of each digit. The objective function is:
+A street number is a sequence of up to 5 digits, ranging from 1 to 99999. That would be too much classes for one classifier and I will use the same trick as Goodfellow _et Al_: one classifier for the length (# of digits) denoted with _L_ and one classifier for the value of each digit denoted with _X<sub>i</sub>_, where _i_ denotes the position of the digit. The objective is to maximize the probability that the prediction of the length and the prediction of each digit is correct, which can be written as follows:
 
 ![](images/obj-eqn.png)
+
+Tilde denotes an estimated value.
 
 The model will be evaluated on its accuracy, which is the ratio of correct predictions over all predictions. A prediction is a street number value. To predict this value, the model must predict the length of the number (how many digits) and a value for each digits. Metrics for those sub-problems will also be provided: the accuracy of length prediction and the accuracy of digit value prediction at every position.
 
@@ -90,7 +92,16 @@ with:
 - LC: locally connected
 - FC-[nodes]
 
-The final model I will train is very close (see discussion below). Since I want to train the model at scale I will be focusing more on the software engineering part than on innovating with new architectures. Feeding the model with large amounts of data in the form of numpy arrays doesn't scale well because this approach requires keeping the whole dataset in memory instead of only the samples used in the current batches, and deep models with loads of params require a lot of memory and computational power as well. To illustrate the problem, consider the 33000 64x64 images of the training set. It occupies `33000 x 64 x 64 x 4bytes = 515 MB` of RAM memory. I augmented the size of the dataset 20 times (putting aside the fact I should have done that dynamically at training time) so feeding a numpy array with 20x33000 images would require more than 10 GB of RAM. Then add the millions of parameters of the model above each needing 4 bytes.
+Convolutional layers are motivated by the fact that an image is a composition of smaller but meaningful features. A car is made of wheels and other pieces, a wheel is made of latex and rims, and smaller parts of rims can be made of very small edges and color shades.  Those could be the meaningful features the filters (or kernels) of the first convolutional layer could detect. In this case, those features would have dimensions of 5x5 (patches). Those edges can be found at different places in the images, this is why convolutional layers are said to have sparse interactions.
+
+Since those filters convolve on the whole image, every pixels affects the weights of the filter (weight sharing). And since a filter can detect similar features at different places in the image, they are said to be equivariant to translations.
+
+Activation functions (relu or maxout) introduce non linearities in the network. Without activations, neural nets would be combinations of linear or polynomial regressions, and adding non linearities make the features extracted more expressive.
+
+Pooling replaces the output of the convolutional layer with the max (Max pooling) or average (average pooling) of neighboring values. It usually (if stride > 1) reduces the spatial representation of the output and makes the filter invariant to small rotations.
+
+#### Memory and resources considerations
+Since I want to train the model at scale I will be focusing more on the software engineering part than on innovating with new architectures. Feeding the model with large amounts of data in the form of numpy arrays doesn't scale well because this approach requires keeping the whole dataset in memory instead of only the samples used in the current batches, and deep models with loads of params require a lot of memory and computational power as well. To illustrate the problem, consider the 33000 64x64 images of the training set. It occupies `33000 x 64 x 64 x 4bytes = 515 MB` of RAM memory. I augmented the size of the dataset 20 times (putting aside the fact I should have done that dynamically at training time) so feeding a numpy array with 20x33000 images would require more than 10 GB of RAM. Then add the millions of parameters of the model above each needing 4 bytes.
 
 Dealing with this kind of figures seems common in problems addressed with deep learning. This is why I want to deliver an implementation that optimizes memory requirements and takes advantage of concurrency.
 
@@ -99,7 +110,7 @@ TensorFlow comes with a framework to feed large amounts of data in smaller chunk
 Once preprocessed, the data will be stored in a Google Cloud Storage bucket from which our model will be fed.
 
 ### Benchmark
-Goodfellow _et Al._ report an accuracy of 96%. This is our benchmark
+Goodfellow _et Al._ reports an accuracy of 96% after 6 days of training. This will serve as our benchmark. I probably won't have the time and computational resources to match or even surpass those results, so I expect my model to get at least 90% of accuracy.
 
 ## III. Methodology
 
